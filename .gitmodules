@@ -1,0 +1,3 @@
+[submodule "SoCo"]
+	path = SoCo
+	url = https://github.com/rahims/SoCo.git
