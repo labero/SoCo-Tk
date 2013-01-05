@@ -3,11 +3,21 @@
 import Tkinter as tk
 import logging, traceback
 import tkMessageBox
-import soco
-
 import urllib
 import base64
 import StringIO as sio
+
+try:
+    import soco
+except:
+    logging.warning('Could not import soco, trying from local file')
+    try:
+        import sys
+        sys.path.append('./SoCo')
+        import soco
+    except:
+        logging.error('Could not find SoCo library')
+        soco = None
 
 try:
     from PIL import Image, ImageTk
@@ -97,7 +107,7 @@ class SonosList(tk.PanedWindow):
 
             speakers.append(speaker)
 
-        logging.debug('Found %d speakers', len(speakers))
+        logging.debug('Found %d speaker(s)', len(speakers))
         if len(speakers) > 1:
             logging.debug('Sorting speakers based on name')
             speakers = sorted(speakers,
