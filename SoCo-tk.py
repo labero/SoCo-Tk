@@ -5,7 +5,11 @@ import logging, traceback
 import tkMessageBox
 import urllib
 import base64
+import platform, os
 import StringIO as sio
+
+import sqlite3 as sql
+import contextlib as clib
 
 try:
     import soco
@@ -27,10 +31,23 @@ except:
     ImageTk = None
     Image = None
 
+USER_DATA = None
+
+if platform.system() == 'Windows':
+    USER_DATA = os.path.join(os.getenv('APPDATA'), 'SoCo-Tk')
+elif platform.system() == 'Linux':
+    USER_DATA = '%(sep)shome%(sep)s%(name)s%(sep)s.config%(sep)sSoCo-Tk%(sep)s' % {
+    'sep' : os.sep,
+    'name': os.environ['LOGNAME']
+    }    
+##elif platform.system() == 'Mac':
+##    pass
+
+
 class WrappedSoCo(soco.SoCo):
-    def __init__(self, ip):
+    def __init__(self, ip, get_info = True):
         soco.SoCo.__init__(self, ip)
-        self.get_speaker_info()
+        if get_info: self.get_speaker_info()
         
         invalid_keys = [key for key, value in self.speaker_info.items() if value is None]
         for key in invalid_keys:
@@ -66,6 +83,7 @@ class SonosList(tk.PanedWindow):
         self.__lastSelected = None
         self.__lastImage = None
         self.empty_info = '-'
+        self._connection = None
 
         self._createWidgets()
         self._createMenu()
@@ -75,17 +93,26 @@ class SonosList(tk.PanedWindow):
         self.rowconfigure(0, weight = 1)
         self.columnconfigure(0, weight = 1)
 
-        self._addContent()
+        self._loadSettings()
 
+##        self._addContent()
         self._updateButtons()
 
-    def __del__(self):
+    def destroy(self):
         for speaker in self.__speakers.keys():
             del speaker
 
         self.__speakers.clear()
 
         del self.__listContent[:]
+
+        if self._connection:
+            logging.info('Closing database connection')
+            self._connection.close()
+            self._connection = None
+        
+    def __del__(self):
+        self.destroy()
 
     def get_speaker_ips(self):
         disc = None
@@ -95,26 +122,29 @@ class SonosList(tk.PanedWindow):
         finally:
             if disc: del disc
 
-    def _addContent(self, force = False):
-        ips = self.get_speaker_ips()
+##    def _addContent(self, force = False):
+##        ips = self.get_speaker_ips()
+##
+##        speakers = []
+##        for ip in ips:
+##            speaker = WrappedSoCo(ip)
+##            if not speaker.speaker_info:
+##                logging.warning('Speaker %s does not have any info (probably a bridge), skipping...', ip)
+##                continue
+##
+##            speakers.append(speaker)
+##
+##        logging.debug('Found %d speaker(s)', len(speakers))
+##        if len(speakers) > 1:
+##            logging.debug('Sorting speakers based on name')
+##            speakers = sorted(speakers,
+##                              cmp = lambda a,b: cmp(str(a), str(b)))
+##
+##        self.__addSpeakers(speakers)
 
-        speakers = []
-        for ip in ips:
-            speaker = WrappedSoCo(ip)
-            if not speaker.speaker_info:
-                logging.warning('Speaker %s does not have any info (probably a bridge), skipping...', ip)
-                continue
-
-            speakers.append(speaker)
-
-        logging.debug('Found %d speaker(s)', len(speakers))
-        if len(speakers) > 1:
-            logging.debug('Sorting speakers based on name')
-            speakers = sorted(speakers,
-                              cmp = lambda a,b: cmp(str(a), str(b)))
-        
+    def __addSpeakers(self, speakers):
         for speaker in speakers:
-            self.__speakers[ip] = speaker
+            self.__speakers[speaker.speaker_ip] = speaker
             self.__listContent.append(speaker)
             self._listbox.insert(tk.END, speaker)
         
@@ -304,6 +334,9 @@ class SonosList(tk.PanedWindow):
             return
         
         logging.debug('Zoneplayer: "%s"', speaker)
+
+        logging.debug('Storing last_selected: %s' % speaker.speaker_info['uid'])
+        self.__setConfig('last_selected', speaker.speaker_info['uid'])
         
 
     def showSpeakerInfo(self, speaker):
@@ -491,13 +524,155 @@ class SonosList(tk.PanedWindow):
         speaker.play()
         self.showSpeakerInfo(speaker)
 
+    def _loadSettings(self):
+        # Connect to database
+        dbPath = os.path.join(USER_DATA, 'SoCo-Tk.sqlite')
+
+        createStructure = False
+        if not os.path.exists(dbPath):
+            logging.info('Database "%s" not found, creating', dbPath)
+            createStructure = True
+
+            if not os.path.exists(USER_DATA):
+                logging.info('Creating directory structure')
+                os.makedirs(USER_DATA)
+
+        logging.info('Connecting: %s', dbPath)
+        self._connection = sql.connect(dbPath)
+        self._connection.row_factory = sql.Row
+
+        if createStructure:
+            self._createSettingsDB()
+
+        # Load speakers
+        self._loadSpeakers()
+
+        # Load last selected speaker
+        selected_speaker_uid = self.__getConfig('last_selected')
+        logging.debug('Last selected speaker: %s', selected_speaker_uid)
+
+        selectIndex = None
+        selectSpeaker = None
+        for index, speaker in enumerate(self.__listContent):
+            if speaker.speaker_info['uid'] == selected_speaker_uid:
+                selectIndex = index
+                selectSpeaker = speaker
+                break
+
+        if selectIndex is not None:
+            self._listbox.selection_anchor(selectIndex)
+            self._listbox.selection_set(selectIndex)
+            self._listbox.see(selectIndex)
+            self.showSpeakerInfo(speaker)
+            
+
+    def _loadSpeakers(self):
+        __sql = '''
+            SELECT
+                speaker_id,
+                name,
+                ip,
+                uid,
+                serial,
+                mac
+            FROM speakers
+        '''
+
+        speakers = []
+        with clib.closing(self._connection.execute(__sql)) as cur:
+            for row in cur:
+                speaker_id = None
+                try:
+                    speaker_id = row['speaker_id']
+                    speaker = WrappedSoCo(row['ip'], get_info = False)
+                    speaker.speaker_info['zone_name'] =         row['name']
+                    speaker.speaker_info['uid'] =               row['uid']
+                    speaker.speaker_info['serial_number'] =     row['serial']
+                    speaker.speaker_info['mac_address'] =       row['mac']
+                    speakers.append(speaker)
+                except:
+                    logging.error('Could not load speaker (id: %s)' % speaker_id)
+                    logging.error(traceback.format_exc())
+
+        self.__addSpeakers(speakers)
+
+    def __setConfig(self, settingName, value):
+        assert settingName is not None
+
+        __sql = 'INSERT OR REPLACE INTO config (name, value) VALUES (?, ?)'
+
+        self._connection.execute(__sql, (settingName, value)).close()
+        self._connection.commit()
+        
+    def __getConfig(self, settingName):
+        assert settingName is not None
+
+        __sql = 'SELECT value FROM config WHERE name = ? LIMIT 1'
+
+        with clib.closing(self._connection.execute(__sql, (settingName, ))) as cur:
+            row = cur.fetchone()
+
+            if not row:
+                return None
+            
+            return row['value']
+
+    def _createSettingsDB(self):
+        logging.debug('Creating tables')
+        self._connection.executescript('''
+            CREATE TABLE IF NOT EXISTS config(
+                config_id   INTEGER,
+                name        TEXT UNIQUE,
+                value       TEXT,
+                PRIMARY KEY(config_id)
+            );
+                
+            CREATE TABLE IF NOT EXISTS speakers(
+                speaker_id  INTEGER,
+                name        TEXT,
+                ip          TEXT,
+                uid         TEXT,
+                serial      TEXT,
+                mac         TEXT,
+                PRIMARY KEY(speaker_id)
+            );
+                
+            CREATE TABLE IF NOT EXISTS images(
+                image_id        INTEGER,
+                uri             TEXT,
+                image           BLOB,
+                image_size_id   INTEGER,
+                PRIMARY KEY(image_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS image_size(
+                image_size_id   INTEGER,
+                label           TEXT,
+                width           INTEGER,
+                height          INTEGER,
+                PRIMARY KEY(image_size_id)
+            );
+        ''').close()
+
+        logging.debug('Creating index')
+        self._connection.execute('''
+            CREATE INDEX IF NOT EXISTS idx_image_size_label ON image_size(label)
+        ''').close()
+
+        self._connection.execute('''
+            CREATE INDEX IF NOT EXISTS idx_config_name ON config(name)
+        ''').close()
+
 def main(root):
     logging.debug('Main')
     sonosList = SonosList(root)
     sonosList.mainloop()
+    sonosList.destroy()
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(levelname)10s: %(message)s', level=logging.DEBUG)
+
+    logging.info('Using data dir: "%s"', USER_DATA)
     
     root = tk.Tk()
     try:
