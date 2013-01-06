@@ -193,6 +193,10 @@ class SonosList(tk.PanedWindow):
         self._left = tk.Frame(self)
         self.add(self._left)
                           
+        # Center frame
+        self._center = tk.Frame(self)
+        self.add(self._center)
+
         # Right frame
         self._right = tk.Frame(self)
         self.add(self._right)
@@ -202,7 +206,6 @@ class SonosList(tk.PanedWindow):
                                    selectmode = tk.EXTENDED)
 
         self._listbox.bind('<<ListboxSelect>>', self._listboxSelected)
-
         
         self._listbox.grid(row = 0,
                            column = 0,
@@ -210,16 +213,31 @@ class SonosList(tk.PanedWindow):
                            padx = 5,
                            pady = 5,
                            sticky = 'news')
+
+
+        # Create queue list
+        self._queuebox = tk.Listbox(self._right,
+                                    selectmode = tk.EXTENDED)
+        
+        self._queuebox.grid(row = 0,
+                            column = 0,
+                            padx = 5,
+                            pady = 5,
+                            sticky = 'news')
+
         
         self._createButtons()
                           
         self._left.rowconfigure(0, weight = 1)
         self._left.columnconfigure(0, weight = 1)
 
+        self._center.rowconfigure(0, weight = 1)
+        self._center.columnconfigure(0, weight = 1)
+
         self._right.rowconfigure(0, weight = 1)
         self._right.columnconfigure(0, weight = 1)
 
-        self._info = tk.Frame(self._right)
+        self._info = tk.Frame(self._center)
         self._info.grid(row = 0,
                         column = 0,
                         padx = 5,
@@ -781,7 +799,7 @@ if __name__ == '__main__':
     root = tk.Tk()
     try:
         root.wm_title('SoCo')
-        root.minsize(600,400)
+        root.minsize(800,400)
         main(root)
 ##    except:
 ##        logging.debug(traceback.format_exc())
