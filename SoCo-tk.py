@@ -84,6 +84,7 @@ class SonosList(tk.PanedWindow):
 
         self.__lastSelected = None
         self.__lastImage = None
+        self.__currentSpeaker = None
         self._connection = None
 
         self.empty_info = '-'
@@ -109,6 +110,9 @@ class SonosList(tk.PanedWindow):
         try:
             del self.__listContent[:]
             del self.__queueContent[:]
+            if self.__currentSpeaker:
+                del self.__currentSpeaker
+                self.__currentSpeaker = None
 
             if self._connection:
                 logging.info('Closing database connection')
@@ -360,24 +364,25 @@ class SonosList(tk.PanedWindow):
                                            pady = 5,
                                            sticky = 'nw')
 
-    def __getSelectedSpeaker(self, widget = None):
-        if widget is None:
-            widget = self._listbox
+    def __getSelectedSpeaker(self):
+        if self.__currentSpeaker:
+            return self.__currentSpeaker
+        
+        widget = self._listbox
 
         selection = widget.curselection()
         if not selection:
-            return None, None
+            return None
 
         index = int(selection[0])
         
         assert len(self.__listContent) > index
         speaker = self.__listContent[index]
 
-        return speaker, index
+        return speaker
 
-    def __getSelectedQueueItem(self, widget = None):
-        if widget is None:
-            widget = self._queuebox
+    def __getSelectedQueueItem(self):
+        widget = self._queuebox
 
         selection = widget.curselection()
         if not selection:
@@ -391,12 +396,11 @@ class SonosList(tk.PanedWindow):
         return track, index
         
     def _volumeChanged(self, evt):
-        speaker, index = self.__getSelectedSpeaker()
-        
-        if index is None:
-            logging.debug('Nothing selected')
+        if not self.__currentSpeaker:
+            logging.warning('No speaker selected')
             return
-
+        
+        speaker = self.__currentSpeaker
         volume = self._infoWidget['volume'].get()
 
         logging.debug('Changing volume to: %d', volume)
@@ -404,21 +408,26 @@ class SonosList(tk.PanedWindow):
         
     def _listboxSelected(self, evt):
         # Note here that Tkinter passes an event object to onselect()
-        w = evt.widget
-        
-        speaker, index = self.__getSelectedSpeaker(w)
+        widget = evt.widget
 
-        if self.__lastSelected == index: return
-        self.__lastSelected = index
+        selection = widget.curselection()
+        if not selection:
+            self.showSpeakerInfo(None)            
+            self._updateButtons()
+            return
 
-        self.showSpeakerInfo(speaker)
-        self._updateButtons()
+        index = int(selection[0])
         
-        if index is None:
-            logging.debug('Nothing selected')
-            self.__lastSelected = None
+        assert len(self.__listContent) > index
+        speaker = self.__listContent[index]
+
+        if speaker == self.__currentSpeaker:
+            logging.info('Speaker already selected, skipping')
             return
         
+        self.showSpeakerInfo(speaker)
+        self._updateButtons()
+                
         logging.debug('Zoneplayer: "%s"', speaker)
 
         logging.debug('Storing last_selected: %s' % speaker.speaker_info['uid'])
@@ -430,6 +439,11 @@ class SonosList(tk.PanedWindow):
            speaker is not None:
             raise TypeError('Unsupported type: %s', type(speaker))
 
+        self.__currentSpeaker = speaker
+        
+        newState = tk.ACTIVE if speaker is not None else tk.DISABLED
+        self._infoWidget['volume'].config(state = newState)
+        
         if speaker is None:
             for info in self._infoWidget.keys():
                 if info == 'volume':
@@ -535,7 +549,7 @@ class SonosList(tk.PanedWindow):
 
     def _updateButtons(self):
         logging.debug('Updating control buttons')
-        speaker, index = self.__getSelectedSpeaker()
+        speaker = self.__getSelectedSpeaker()
         
         newState = tk.ACTIVE if speaker else tk.DISABLED
         for button in self._controlButtons.values():
@@ -611,7 +625,7 @@ class SonosList(tk.PanedWindow):
     def _playSelectedQueueItem(self, evt):
         try:
             track, track_index = self.__getSelectedQueueItem()
-            speaker, speaker_index = self.__getSelectedSpeaker()
+            speaker = self.__getSelectedSpeaker()
 
             if speaker is None or\
                track_index is None:
@@ -619,6 +633,7 @@ class SonosList(tk.PanedWindow):
                 return
             
             speaker.play_from_queue(track_index)
+            self.showSpeakerInfo(speaker)
         except:
             logging.error('Could not play queue item')
             logging.error(traceback.format_exc())
@@ -627,7 +642,7 @@ class SonosList(tk.PanedWindow):
         
 
     def __previous(self):
-        speaker, index = self.__getSelectedSpeaker()
+        speaker = self.__getSelectedSpeaker()
         if not speaker:
             raise SystemError('No speaker selected, this should not happend')
 
@@ -635,7 +650,7 @@ class SonosList(tk.PanedWindow):
         self.showSpeakerInfo(speaker)
         
     def __next(self):
-        speaker, index = self.__getSelectedSpeaker()
+        speaker = self.__getSelectedSpeaker()
         if not speaker:
             raise SystemError('No speaker selected, this should not happend')
 
@@ -643,7 +658,7 @@ class SonosList(tk.PanedWindow):
         self.showSpeakerInfo(speaker)
 
     def __pause(self):
-        speaker, index = self.__getSelectedSpeaker()
+        speaker = self.__getSelectedSpeaker()
         if not speaker:
             raise SystemError('No speaker selected, this should not happend')
 
@@ -651,7 +666,7 @@ class SonosList(tk.PanedWindow):
         self.showSpeakerInfo(speaker)
 
     def __play(self):
-        speaker, index = self.__getSelectedSpeaker()
+        speaker = self.__getSelectedSpeaker()
         if not speaker:
             raise SystemError('No speaker selected, this should not happend')
 
