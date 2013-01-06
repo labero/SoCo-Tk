@@ -66,7 +66,7 @@ class SonosList(tk.PanedWindow):
         self.__parent = parent
         tk.PanedWindow.__init__(self, parent, sashrelief = tk.RAISED)
 
-        self.__parent.protocol('WM_DELETE_WINDOW', self.__parent.quit)
+        self.__parent.protocol('WM_DELETE_WINDOW', self._cleanExit)
         
         self.grid(row = 0,
                   column = 0,
@@ -95,21 +95,24 @@ class SonosList(tk.PanedWindow):
 
         self._loadSettings()
 
-##        self._addContent()
         self._updateButtons()
 
     def destroy(self):
-        for speaker in self.__speakers.keys():
-            del speaker
+        try:
+            for speaker in self.__speakers.keys():
+                del speaker
 
-        self.__speakers.clear()
+            self.__speakers.clear()
 
-        del self.__listContent[:]
+            del self.__listContent[:]
 
-        if self._connection:
-            logging.info('Closing database connection')
-            self._connection.close()
-            self._connection = None
+            if self._connection:
+                logging.info('Closing database connection')
+                self._connection.close()
+                self._connection = None
+        except:
+            logging.error('Error while destroying')
+            logging.error(traceback.format_exc())
         
     def __del__(self):
         self.destroy()
@@ -142,6 +145,33 @@ class SonosList(tk.PanedWindow):
 
         self._storeSpeakers(speakers)
         self.__addSpeakers(speakers)
+
+    def _cleanExit(self):
+        try:
+            geometry = self.__parent.geometry()
+            if geometry:
+                logging.debug('Storing geometry: "%s"', geometry)
+                self.__setConfig('window_geometry', geometry)
+
+            listOfPanes = self.panes()
+            sashes = []
+            for index in range(len(listOfPanes) - 1):
+                x, y = self.sash_coord(index)
+                sashes.append(':'.join((str(index),
+                                        str(x),
+                                        str(y))))
+
+            finalSashValue = ','.join(sashes)
+            logging.debug('Storing sashes: "%s"', finalSashValue)
+            self.__setConfig('sash_coordinates', finalSashValue)
+                
+        except:
+            logging.error('Error making clean exit')
+            logging.error(traceback.format_exc())
+        finally:
+            self.destroy()
+            self.__parent.quit()
+            
 
     def __addSpeakers(self, speakers):
         logging.debug('Deleting all items from list')
@@ -498,7 +528,7 @@ class SonosList(tk.PanedWindow):
 
         self._filemenu.add_command(label="Scan for speakers", command=self.scanSpeakers)
         
-        self._filemenu.add_command(label="Exit", command=self.__parent.quit)
+        self._filemenu.add_command(label="Exit", command=self._cleanExit)
 
     def __previous(self):
         speaker, index = self.__getSelectedSpeaker()
@@ -552,6 +582,16 @@ class SonosList(tk.PanedWindow):
         if createStructure:
             self._createSettingsDB()
 
+        # Load window geometry
+        geometry = self.__getConfig('window_geometry')
+        if geometry:
+            try:
+                logging.info('Found geometry "%s", applying', geometry)
+                self.__parent.geometry(geometry)
+            except:
+                logging.error('Could not set window geometry')
+                logging.error(traceback.format_exc())
+
         # Load speakers
         speakers = self._loadSpeakers()
         if speakers:
@@ -581,11 +621,25 @@ class SonosList(tk.PanedWindow):
             self._listbox.selection_set(selectIndex)
             self._listbox.see(selectIndex)
             self.showSpeakerInfo(speaker)
+
+        # Load sash_coordinates
+        sashes = self.__getConfig('sash_coordinates')
+        if sashes:
+            for sash_info in sashes.split(','):
+                if len(sash_info) < 1: continue
+                try:
+                    logging.debug('Setting sash: "%s"' % sash_info)
+                    index, x, y = map(int, sash_info.split(':'))
+                    self.sash_place(index, x, y)
+                except:
+                    logging.error('Could not set sash: "%s"' % sash_info)
+                    logging.error(traceback.format_exc())
+
             
 
     def _storeSpeakers(self, speakers):
         logging.debug('Removing old speakers')
-        self._connection.execute('DELETE * FROM speakers').close()
+        self._connection.execute('DELETE FROM speakers').close()
         self._connection.commit()
 
         __sql = '''
