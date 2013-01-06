@@ -104,8 +104,6 @@ class SonosList(tk.PanedWindow):
         self._loadSettings()
         self._updateButtons()
 
-
-
     def destroy(self):
         try:
             del self.__listContent[:]
@@ -471,7 +469,7 @@ class SonosList(tk.PanedWindow):
             
             for info, value in track.items():
                 if info == 'album_art':
-                    self.__setAlbumArt(value)
+                    self.__setAlbumArt(value, track_uri = track['uri'])
                     continue
                 elif info == 'volume':
                     self._infoWidget[info].set(value)
@@ -512,7 +510,7 @@ class SonosList(tk.PanedWindow):
                                    message = 'Could not receive speaker queue')
             
 
-    def __setAlbumArt(self, url):
+    def __setAlbumArt(self, url, track_uri = None):
         if ImageTk is None:
             logging.warning('python-imaging-tk lib missing, skipping album art')
             return
@@ -520,15 +518,54 @@ class SonosList(tk.PanedWindow):
         if not url:
             logging.warning('url is empty, returnning')
             return
-        
+
         connection = None
         newImage = None
         
         # Receive Album art, resize it and show it
         try:
-            connection = urllib.urlopen(url)
-            raw_data = connection.read()
-            b64 = base64.encodestring(raw_data)
+
+            raw_data = None
+            
+            # Check for cached albumart
+            if track_uri:
+                try:
+                    __sql = '''
+                        SELECT image FROM images AS i
+                        WHERE
+                            i.uri = ?
+                        LIMIT 1
+                    '''
+                    with clib.closing(self._connection.execute(__sql, (track_uri,))) as cur:
+                        row = cur.fetchone()
+                        if row:
+                            logging.debug('Found album art for uri: "%s"', track_uri)
+                            raw_data = str(row['image'])
+                except:
+                    logging.warning('Could not load album art from database')
+                    logging.error(traceback.format_exc())
+
+            if raw_data is None:
+                logging.info('Could not find cached album art, loading from URL')
+                connection = urllib.urlopen(url)
+                raw_data = connection.read()
+
+                try:
+                    __sql = '''
+                        INSERT OR REPLACE INTO images (
+                            uri,
+                            image
+                        ) VALUES (?, ?)
+                    '''
+                    logging.info('Storing album art for uri: "%s"', track_uri)
+                    self._connection.execute(__sql, (track_uri,
+                                                     buffer(raw_data))).close()
+
+                    self._connection.commit()
+                except:
+                    logging.error('Could not store album art')
+                    logging.error(traceback.format_exc())
+
             image = Image.open(sio.StringIO(raw_data))
             widgetConfig = self._infoWidget['album_art'].config()
             thumbSize = (int(widgetConfig['width'][4]),
@@ -856,24 +893,15 @@ class SonosList(tk.PanedWindow):
                 
             CREATE TABLE IF NOT EXISTS images(
                 image_id        INTEGER,
-                uri             TEXT,
+                uri             TEXT UNIQUE,
                 image           BLOB,
-                image_size_id   INTEGER,
                 PRIMARY KEY(image_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS image_size(
-                image_size_id   INTEGER,
-                label           TEXT,
-                width           INTEGER,
-                height          INTEGER,
-                PRIMARY KEY(image_size_id)
             );
         ''').close()
 
         logging.debug('Creating index')
         self._connection.execute('''
-            CREATE INDEX IF NOT EXISTS idx_image_size_label ON image_size(label)
+            CREATE INDEX IF NOT EXISTS idx_image_uri ON images(uri)
         ''').close()
 
         self._connection.execute('''
