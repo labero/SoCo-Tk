@@ -101,11 +101,6 @@ class SonosList(tk.PanedWindow):
 
     def destroy(self):
         try:
-            for speaker in self.__speakers.keys():
-                del speaker
-
-            self.__speakers.clear()
-
             del self.__listContent[:]
             del self.__queueContent[:]
 
