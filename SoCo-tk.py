@@ -2,6 +2,8 @@
 
 import Tkinter as tk
 import logging, traceback
+logging.basicConfig(format='%(asctime)s %(levelname)10s: %(message)s', level = logging.DEBUG)
+
 import tkMessageBox
 import urllib
 import base64
@@ -90,14 +92,18 @@ class SonosList(tk.PanedWindow):
         self._createWidgets()
         self._createMenu()
 
+##        self.sash_place(0,150,400)
+##        self.sash_place(1,400,400)
+
         parent.rowconfigure(0, weight = 1)
         parent.columnconfigure(0, weight = 1)
         self.rowconfigure(0, weight = 1)
         self.columnconfigure(0, weight = 1)
 
         self._loadSettings()
-
         self._updateButtons()
+
+
 
     def destroy(self):
         try:
@@ -373,7 +379,7 @@ class SonosList(tk.PanedWindow):
         if widget is None:
             widget = self._queuebox
 
-        selection = width.curselection()
+        selection = widget.curselection()
         if not selection:
             return None, None
 
@@ -495,6 +501,10 @@ class SonosList(tk.PanedWindow):
         if ImageTk is None:
             logging.warning('python-imaging-tk lib missing, skipping album art')
             return
+
+        if not url:
+            logging.warning('url is empty, returnning')
+            return
         
         connection = None
         newImage = None
@@ -602,6 +612,11 @@ class SonosList(tk.PanedWindow):
         try:
             track, track_index = self.__getSelectedQueueItem()
             speaker, speaker_index = self.__getSelectedSpeaker()
+
+            if speaker is None or\
+               track_index is None:
+                logging.warning('Could not get track or speaker (%s, %s)', track_index, speaker)
+                return
             
             speaker.play_from_queue(track_index)
         except:
@@ -703,20 +718,20 @@ class SonosList(tk.PanedWindow):
             self._listbox.see(selectIndex)
             self.showSpeakerInfo(speaker)
 
-        # Load sash_coordinates
-        sashes = self.__getConfig('sash_coordinates')
-        if sashes:
-            for sash_info in sashes.split(','):
-                if len(sash_info) < 1: continue
-                try:
-                    logging.debug('Setting sash: "%s"' % sash_info)
-                    index, x, y = map(int, sash_info.split(':'))
-                    self.sash_place(index, x, y)
-                except:
-                    logging.error('Could not set sash: "%s"' % sash_info)
-                    logging.error(traceback.format_exc())
-
-            
+##        # Load sash_coordinates
+##        sashes = self.__getConfig('sash_coordinates')
+##        if sashes:
+##            for sash_info in sashes.split(','):
+##                if len(sash_info) < 1: continue
+##                try:
+##                    logging.debug('Setting sash: "%s"' % sash_info)
+##                    index, x, y = map(int, sash_info.split(':'))
+##                    self.sash_place(index, x, y)
+##                except:
+##                    logging.error('Could not set sash: "%s"' % sash_info)
+##                    logging.error(traceback.format_exc())
+##
+##            
 
     def _storeSpeakers(self, speakers):
         logging.debug('Removing old speakers')
@@ -741,7 +756,7 @@ class SonosList(tk.PanedWindow):
                     speaker.speaker_ip,
                     speaker.speaker_info['uid'],
                     speaker.speaker_info['serial_number'],
-                    speaker.speaker_info['mac'],
+                    speaker.speaker_info['mac_address'],
                     )
                 self._connection.execute(__sql, params).close()
             except:
@@ -855,8 +870,6 @@ def main(root):
     sonosList.destroy()
 
 if __name__ == '__main__':
-    logging.basicConfig(format='%(levelname)10s: %(message)s', level=logging.DEBUG)
-
     logging.info('Using data dir: "%s"', USER_DATA)
     
     root = tk.Tk()
