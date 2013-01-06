@@ -414,6 +414,7 @@ class SonosList(tk.PanedWindow):
         if not selection:
             self.showSpeakerInfo(None)            
             self._updateButtons()
+            self.__setConfig('last_selected', None)
             return
 
         index = int(selection[0])
@@ -540,6 +541,7 @@ class SonosList(tk.PanedWindow):
             self._infoWidget['album_art'].config(image = newImage)
         except:
             logging.error('Could not set album art, skipping...')
+            logging.error(url)
             logging.error(traceback.format_exc())
         finally:
             if connection: connection.close()
