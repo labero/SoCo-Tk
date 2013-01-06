@@ -221,6 +221,7 @@ class SonosList(tk.PanedWindow):
 
         scrollbar.config(command = self._queuebox.yview)
         self._queuebox.config(yscrollcommand = scrollbar.set)
+        self._queuebox.bind('<Double-Button-1>', self._playSelectedQueueItem)
         
         scrollbar.grid(row = 0,
                        column = 1,
@@ -367,6 +368,21 @@ class SonosList(tk.PanedWindow):
         speaker = self.__listContent[index]
 
         return speaker, index
+
+    def __getSelectedQueueItem(self, widget = None):
+        if widget is None:
+            widget = self._queuebox
+
+        selection = width.curselection()
+        if not selection:
+            return None, None
+
+        index = int(selection[0])
+
+        assert len(self.__queueContent) > index
+        track = self.__queueContent[index]
+
+        return track, index
         
     def _volumeChanged(self, evt):
         speaker, index = self.__getSelectedSpeaker()
@@ -580,6 +596,20 @@ class SonosList(tk.PanedWindow):
         self._filemenu.add_command(label="Scan for speakers", command=self.scanSpeakers)
         
         self._filemenu.add_command(label="Exit", command=self._cleanExit)
+
+
+    def _playSelectedQueueItem(self, evt):
+        try:
+            track, track_index = self.__getSelectedQueueItem()
+            speaker, speaker_index = self.__getSelectedSpeaker()
+            
+            speaker.play_from_queue(track_index)
+        except:
+            logging.error('Could not play queue item')
+            logging.error(traceback.format_exc())
+            tkMessageBox.showerror(title = 'Queue...',
+                                   message = 'Error playing queue item, please check error log for description')
+        
 
     def __previous(self):
         speaker, index = self.__getSelectedSpeaker()
