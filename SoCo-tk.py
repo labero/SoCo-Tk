@@ -122,27 +122,36 @@ class SonosList(tk.PanedWindow):
         finally:
             if disc: del disc
 
-##    def _addContent(self, force = False):
-##        ips = self.get_speaker_ips()
-##
-##        speakers = []
-##        for ip in ips:
-##            speaker = WrappedSoCo(ip)
-##            if not speaker.speaker_info:
-##                logging.warning('Speaker %s does not have any info (probably a bridge), skipping...', ip)
-##                continue
-##
-##            speakers.append(speaker)
-##
-##        logging.debug('Found %d speaker(s)', len(speakers))
-##        if len(speakers) > 1:
-##            logging.debug('Sorting speakers based on name')
-##            speakers = sorted(speakers,
-##                              cmp = lambda a,b: cmp(str(a), str(b)))
-##
-##        self.__addSpeakers(speakers)
+    def scanSpeakers(self):
+        ips = self.get_speaker_ips()
+
+        speakers = []
+        for ip in ips:
+            speaker = WrappedSoCo(ip)
+            if not speaker.speaker_info:
+                logging.warning('Speaker %s does not have any info (probably a bridge), skipping...', ip)
+                continue
+
+            speakers.append(speaker)
+
+        logging.debug('Found %d speaker(s)', len(speakers))
+        if len(speakers) > 1:
+            logging.debug('Sorting speakers based on name')
+            speakers = sorted(speakers,
+                              cmp = lambda a,b: cmp(str(a), str(b)))
+
+        self._storeSpeakers(speakers)
+        self.__addSpeakers(speakers)
 
     def __addSpeakers(self, speakers):
+        logging.debug('Deleting all items from list')
+        self._listbox.delete(0, tk.END)
+
+        if not speakers:
+            logging.debug('No speakers to add, returning')
+            return
+        
+        logging.debug('Inserting new items (%d)', len(speakers))
         for speaker in speakers:
             self.__speakers[speaker.speaker_ip] = speaker
             self.__listContent.append(speaker)
@@ -487,8 +496,7 @@ class SonosList(tk.PanedWindow):
         self._filemenu = tk.Menu(self._menubar, tearoff=0)
         self._menubar.add_cascade(label="File", menu=self._filemenu)
 
-        #TODO: force update
-##        self._filemenu.add_command(label="Refresh", command=self._addContent)
+        self._filemenu.add_command(label="Scan for speakers", command=self.scanSpeakers)
         
         self._filemenu.add_command(label="Exit", command=self.__parent.quit)
 
@@ -545,7 +553,16 @@ class SonosList(tk.PanedWindow):
             self._createSettingsDB()
 
         # Load speakers
-        self._loadSpeakers()
+        speakers = self._loadSpeakers()
+        if speakers:
+            self.__addSpeakers(speakers)
+        else:
+            message = 'No speakers found in your local configuration' \
+                      ', do you want to scan for speakers?'
+            
+            doscan = tkMessageBox.askyesno(title = 'Scan...',
+                                           message = message)
+            if doscan: self.scanSpeakers()
 
         # Load last selected speaker
         selected_speaker_uid = self.__getConfig('last_selected')
@@ -566,7 +583,40 @@ class SonosList(tk.PanedWindow):
             self.showSpeakerInfo(speaker)
             
 
+    def _storeSpeakers(self, speakers):
+        logging.debug('Removing old speakers')
+        self._connection.execute('DELETE * FROM speakers').close()
+        self._connection.commit()
+
+        __sql = '''
+            INSERT INTO speakers(
+                name,
+                ip,
+                uid,
+                serial,
+                mac
+            ) VALUES (?, ?, ?, ?, ?)
+        '''
+        
+        logging.debug('Storing speakers (size: %d)', len(speakers))
+        for speaker in speakers:
+            try:
+                params = (
+                    speaker.speaker_info['zone_name'],
+                    speaker.speaker_ip,
+                    speaker.speaker_info['uid'],
+                    speaker.speaker_info['serial_number'],
+                    speaker.speaker_info['mac'],
+                    )
+                self._connection.execute(__sql, params).close()
+            except:
+                logging.error('Could not insert speaker: %s', speaker)
+                logging.error(traceback.format_exc())
+                
+        self._connection.commit()
+        
     def _loadSpeakers(self):
+        logging.info('Loading speakers from config')
         __sql = '''
             SELECT
                 speaker_id,
@@ -594,7 +644,7 @@ class SonosList(tk.PanedWindow):
                     logging.error('Could not load speaker (id: %s)' % speaker_id)
                     logging.error(traceback.format_exc())
 
-        self.__addSpeakers(speakers)
+        return speakers
 
     def __setConfig(self, settingName, value):
         assert settingName is not None
