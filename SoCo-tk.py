@@ -220,8 +220,17 @@ class SonosList(tk.PanedWindow):
 
 
         # Create queue list
+        scrollbar = tk.Scrollbar(self._right)
         self._queuebox = tk.Listbox(self._right,
                                     selectmode = tk.EXTENDED)
+
+        scrollbar.config(command = self._queuebox.yview)
+        self._queuebox.config(yscrollcommand = scrollbar.set)
+        
+        scrollbar.grid(row = 0,
+                       column = 1,
+                       pady = 5,
+                       sticky = 'ns')
         
         self._queuebox.grid(row = 0,
                             column = 0,
@@ -229,7 +238,6 @@ class SonosList(tk.PanedWindow):
                             pady = 5,
                             sticky = 'news')
 
-        
         self._createButtons()
                           
         self._left.rowconfigure(0, weight = 1)
