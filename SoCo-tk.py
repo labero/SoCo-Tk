@@ -74,16 +74,18 @@ class SonosList(tk.PanedWindow):
                   ipady = 5,
                   sticky = 'news')
 
-        self.__speakers = {}
         self.__listContent = []
+        self.__queueContent = []
 
         self._controlButtons = {}
         self._infoWidget = {}
 
         self.__lastSelected = None
         self.__lastImage = None
-        self.empty_info = '-'
         self._connection = None
+
+        self.empty_info = '-'
+        self.labelQueue = '%(artist)s - %(title)s'
 
         self._createWidgets()
         self._createMenu()
@@ -105,6 +107,7 @@ class SonosList(tk.PanedWindow):
             self.__speakers.clear()
 
             del self.__listContent[:]
+            del self.__queueContent[:]
 
             if self._connection:
                 logging.info('Closing database connection')
@@ -176,6 +179,8 @@ class SonosList(tk.PanedWindow):
     def __addSpeakers(self, speakers):
         logging.debug('Deleting all items from list')
         self._listbox.delete(0, tk.END)
+        del self.__listContent[:]
+        self.__listContent = []
 
         if not speakers:
             logging.debug('No speakers to add, returning')
@@ -183,7 +188,6 @@ class SonosList(tk.PanedWindow):
         
         logging.debug('Inserting new items (%d)', len(speakers))
         for speaker in speakers:
-            self.__speakers[speaker.speaker_ip] = speaker
             self.__listContent.append(speaker)
             self._listbox.insert(tk.END, speaker)
         
@@ -416,8 +420,11 @@ class SonosList(tk.PanedWindow):
                 self._infoWidget[info].config(text = self.empty_info)
             return
 
-        logging.info('Receive speaker info from: "%s"' % speaker)
+        #######################
+        # Load speaker info
+        #######################
         try:
+            logging.info('Receive speaker info from: "%s"' % speaker)
             track = speaker.get_current_track_info()
 
             track['volume'] = speaker.volume()
@@ -440,6 +447,29 @@ class SonosList(tk.PanedWindow):
             logging.error(errmsg)
             tkMessageBox.showerror(title = 'Speaker info...',
                                    message = 'Could not receive speaker information')
+
+        #######################
+        # Load queue
+        #######################
+        try:
+            logging.info('Gettting queue from speaker')
+            queue = speaker.get_queue()
+
+            logging.debug('Deleting old items')
+            self._queuebox.delete(0, tk.END)
+            del self.__queueContent[:]
+            self.__queueContent = []
+
+            logging.debug('Inserting items (%d) to listbox', len(queue))
+            for item in queue:
+                string = self.labelQueue % item
+                self.__queueContent.append(item)
+                self._queuebox.insert(tk.END, string)
+        except:
+            errmsg = traceback.format_exc()
+            logging.error(errmsg)
+            tkMessageBox.showerror(title = 'Queue...',
+                                   message = 'Could not receive speaker queue')
             
 
     def __setAlbumArt(self, url):
