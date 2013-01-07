@@ -403,6 +403,18 @@ class SonosList(tk.PanedWindow):
 
         logging.debug('Changing volume to: %d', volume)
         speaker.volume(volume)
+
+    def __clear(self, typeName):
+        if typeName == 'queue':
+            logging.debug('Deleting old items')
+            self._queuebox.delete(0, tk.END)
+            del self.__queueContent[:]
+            self.__queueContent = []
+        elif typeName == 'album_art':
+            self._infoWidget[typeName].config(image = None)
+            if self.__lastImage:
+                del self.__lastImage
+                self.__lastImage = None
         
     def _listboxSelected(self, evt):
         # Note here that Tkinter passes an event object to onselect()
@@ -433,7 +445,7 @@ class SonosList(tk.PanedWindow):
         self.__setConfig('last_selected', speaker.speaker_info['uid'])
         
 
-    def showSpeakerInfo(self, speaker):
+    def showSpeakerInfo(self, speaker, refresh_queue = True):
         if not isinstance(speaker, soco.SoCo) and\
            speaker is not None:
             raise TypeError('Unsupported type: %s', type(speaker))
@@ -444,15 +456,13 @@ class SonosList(tk.PanedWindow):
         self._infoWidget['volume'].config(state = newState)
         
         if speaker is None:
+            self.__clearQueue()
             for info in self._infoWidget.keys():
                 if info == 'volume':
                     self._infoWidget[info].set(0)
                     continue
                 elif info == 'album_art':
-                    self._infoWidget[info].config(image = None)
-                    if self.__lastImage:
-                        del self.__lastImage
-                        self.__lastImage = None
+                    self.__clear(info)
                     continue
                 
                 self._infoWidget[info].config(text = self.empty_info)
@@ -461,15 +471,18 @@ class SonosList(tk.PanedWindow):
         #######################
         # Load speaker info
         #######################
+        playingTrack = None
         try:
             logging.info('Receive speaker info from: "%s"' % speaker)
             track = speaker.get_current_track_info()
+            playingTrack = track['uri']
 
             track['volume'] = speaker.volume()
             
+            self.__clear('album_art')
             for info, value in track.items():
                 if info == 'album_art':
-                    self.__setAlbumArt(value, track_uri = track['uri'])
+                    self.__setAlbumArt(value, track_uri = playingTrack)
                     continue
                 elif info == 'volume':
                     self._infoWidget[info].set(value)
@@ -490,25 +503,34 @@ class SonosList(tk.PanedWindow):
         # Load queue
         #######################
         try:
-            logging.info('Gettting queue from speaker')
-            queue = speaker.get_queue()
+            select = None
+            if refresh_queue:
+                logging.info('Gettting queue from speaker')
+                queue = speaker.get_queue()
 
-            logging.debug('Deleting old items')
-            self._queuebox.delete(0, tk.END)
-            del self.__queueContent[:]
-            self.__queueContent = []
+                logging.debug('Deleting old items')
+                self.__clear('queue')
 
-            logging.debug('Inserting items (%d) to listbox', len(queue))
-            for item in queue:
-                string = self.labelQueue % item
-                self.__queueContent.append(item)
-                self._queuebox.insert(tk.END, string)
+                logging.debug('Inserting items (%d) to listbox', len(queue))
+                for index, item in enumerate(queue):
+                    string = self.labelQueue % item
+                    self.__queueContent.append(item)
+                    self._queuebox.insert(tk.END, string)
+
+            if playingTrack is not None:
+                for index, item in enumerate(self.__queueContent):
+                    if item['uri'] == playingTrack:
+                        self._queuebox.selection_clear(0, tk.END)
+                        self._queuebox.selection_anchor(index)
+                        self._queuebox.selection_set(index)
+                        break
+                
         except:
             errmsg = traceback.format_exc()
             logging.error(errmsg)
             tkMessageBox.showerror(title = 'Queue...',
                                    message = 'Could not receive speaker queue')
-            
+                
 
     def __setAlbumArt(self, url, track_uri = None):
         if ImageTk is None:
@@ -672,7 +694,7 @@ class SonosList(tk.PanedWindow):
                 return
             
             speaker.play_from_queue(track_index)
-            self.showSpeakerInfo(speaker)
+            self.showSpeakerInfo(speaker, refresh_queue = False)
         except:
             logging.error('Could not play queue item')
             logging.error(traceback.format_exc())
@@ -686,7 +708,7 @@ class SonosList(tk.PanedWindow):
             raise SystemError('No speaker selected, this should not happend')
 
         speaker.previous()
-        self.showSpeakerInfo(speaker)
+        self.showSpeakerInfo(speaker, refresh_queue = False)
         
     def __next(self):
         speaker = self.__getSelectedSpeaker()
@@ -694,7 +716,7 @@ class SonosList(tk.PanedWindow):
             raise SystemError('No speaker selected, this should not happend')
 
         speaker.next()
-        self.showSpeakerInfo(speaker)
+        self.showSpeakerInfo(speaker, refresh_queue = False)
 
     def __pause(self):
         speaker = self.__getSelectedSpeaker()
@@ -702,7 +724,7 @@ class SonosList(tk.PanedWindow):
             raise SystemError('No speaker selected, this should not happend')
 
         speaker.pause()
-        self.showSpeakerInfo(speaker)
+        self.showSpeakerInfo(speaker, refresh_queue = False)
 
     def __play(self):
         speaker = self.__getSelectedSpeaker()
@@ -710,7 +732,7 @@ class SonosList(tk.PanedWindow):
             raise SystemError('No speaker selected, this should not happend')
 
         speaker.play()
-        self.showSpeakerInfo(speaker)
+        self.showSpeakerInfo(speaker, refresh_queue = False)
 
     def _loadSettings(self):
         # Connect to database
