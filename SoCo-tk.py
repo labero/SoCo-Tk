@@ -24,6 +24,10 @@ except:
     except:
         logging.error('Could not find SoCo library')
         soco = None
+        tkMessageBox.showerror(title = 'SoCo',
+                               message = 'Could not find SoCo library, make sure you have installed SoCo!',
+                               parent = None)
+        exit()
 
 try:
     from PIL import Image, ImageTk
