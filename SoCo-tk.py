@@ -682,9 +682,27 @@ class SonosList(tk.PanedWindow):
         self._filemenu = tk.Menu(self._menubar, tearoff=0)
         self._menubar.add_cascade(label="File", menu=self._filemenu)
 
-        self._filemenu.add_command(label="Scan for speakers", command=self.scanSpeakers)
+        self._filemenu.add_command(label="Scan for speakers",
+                                   command=self.scanSpeakers)
         
-        self._filemenu.add_command(label="Exit", command=self._cleanExit)
+        self._filemenu.add_command(label="Exit",
+                                   command=self._cleanExit)
+
+        # Playback menu
+        self._playbackmenu = tk.Menu(self._menubar, tearoff=0)
+        self._menubar.add_cascade(label="Playback", menu=self._playbackmenu)
+
+        self._playbackmenu.add_command(label = "Play",
+                                       command = self.__play)
+        
+        self._playbackmenu.add_command(label = "Pause",
+                                       command = self.__pause)
+        
+        self._playbackmenu.add_command(label = "Previous",
+                                       command = self.__previous)
+        
+        self._playbackmenu.add_command(label = "Next",
+                                       command = self.__next)
 
 
     def _playSelectedQueueItem(self, evt):
